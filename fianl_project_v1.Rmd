@@ -1,0 +1,362 @@
+---
+title: "fianl_project_v1"
+output: html_document
+date: '2022-05-02'
+---
+
+```{r}
+# Data loading, library loading
+
+install.packages("tidyr")
+install.packages("rpart")
+install.packages("ggplot2")
+install.packages("ROSE")
+library(dummies)
+library(dplyr)
+library(tree)
+library(randomForest)
+library(tibble)
+library(tidyr)
+library(rpart)
+library(ggplot2)
+library(class)
+library(ROSE)
+
+RTA_data <- read.csv("/Users/chiaentsai/Desktop/Data Mining/project/RTA Dataset.csv")
+RTA_data <- as_tibble(RTA_data)
+#typeof(RTA_data)
+head(RTA_data)
+nrow(RTA_data)
+ncol(RTA_data)
+
+RTA_1 <- RTA_data[, c("Age_band_of_driver", "Sex_of_driver", "Driving_experience", "Type_of_vehicle", "Defect_of_vehicle", "Accident_severity")]
+nrow(RTA_1)
+RTA_1
+```
+
+
+
+```{r}
+
+# Data preprocessing (turn categotical column into factors)
+#remove rows with missing values
+RTA_1[RTA_1==""] <- NA
+RTA_1 <- na.omit(RTA_1)
+nrow(RTA_1)
+RTA_1
+
+#check column-Age_band_of_driver. Remove rows with unknown age.
+unique(RTA_1$Age_band_of_driver)
+RTA_1[RTA_1=="Unknown"] <- NA
+RTA_1 <- na.omit(RTA_1)
+nrow(RTA_1)
+RTA_1[RTA_1=="Under 18"] <- "0"
+RTA_1[RTA_1=="18-30"] <- "1"
+RTA_1[RTA_1=="31-50"] <- "2"
+RTA_1[RTA_1=="Over 51"] <- "3"
+#RTA_1$Age_band_of_driver <- as.numeric(RTA_1$Age_band_of_driver)
+RTA_1$Age_band_of_driver <- as.factor(RTA_1$Age_band_of_driver)
+
+#check column-Sex_of_driver.
+unique(RTA_1$Sex_of_driver)
+RTA_1$Sex_of_driver <- as.factor(RTA_1$Sex_of_driver)
+
+#check column-Driving_experience. Remove rows with unknown driving experience.
+unique(RTA_1$Driving_experience)
+RTA_1[RTA_1=="unknown"] <- NA
+RTA_1 <- na.omit(RTA_1)
+RTA_1$Driving_experience <- as.factor(RTA_1$Driving_experience)
+
+#check column-Type_of_vehicle. Remove data with vehicle type "Pick up upto 10Q"(not clear), "Special vehicle"(not clear),"Turbo"(the number of data is too low). Clearly rename some columns.
+table(RTA_1$Type_of_vehicle)
+RTA_1[RTA_1=="Pick up upto 10Q"] <- NA
+RTA_1[RTA_1=="Special vehicle"] <- NA
+RTA_1[RTA_1=="Turbo"] <- NA
+RTA_1 <- na.omit(RTA_1)
+
+RTA_1[RTA_1=="Lorry (11?40Q)"] <- "Lorry (11-40Q)"
+RTA_1[RTA_1=="Lorry (41?100Q)"] <- "Lorry (41-100Q)"
+RTA_1[RTA_1=="Public (13?45 seats)"] <- "Public (13-45 seats)"
+unique(RTA_1$Type_of_vehicle)
+RTA_1$Type_of_vehicle <- as.factor(RTA_1$Type_of_vehicle)
+
+#check column- Defect_of_vehicle
+unique(RTA_1$Defect_of_vehicle)
+RTA_1$Defect_of_vehicle <- as.factor(RTA_1$Defect_of_vehicle)
+
+#check column- Accident_severity
+unique(RTA_1$Accident_severity)
+RTA_1$Accident_severity <- as.factor(RTA_1$Accident_severity)
+
+RTA_1
+
+```
+
+
+
+
+
+```{r}
+# model building (factors)
+set.seed(1)
+train_id <- sample(1:nrow(RTA_1), nrow(RTA_1)*4/5)
+RTA_1.train <- RTA_1[train_id,]
+RTA_1.test<- RTA_1[-train_id,]
+RTA_1.train
+
+# undersampling
+
+balanced_RTA = NULL
+
+RTA_1$Accident_severity =="Slight Injury"
+
+slight_row <- RTA_1[RTA_1$Accident_severity =="Slight Injury",]
+serious_row <- RTA_1[RTA_1$Accident_severity =="Serious Injury",]
+fatal_row <- RTA_1[RTA_1$Accident_severity =="Fatal injury",]
+
+nslight <- sum(RTA_1$Accident_severity == "Slight Injury") #4598
+nserious <- sum(RTA_1$Accident_severity == "Serious Injury") #812
+nfatal <- sum(RTA_1$Accident_severity == "Fatal injury") #81
+
+serious_index <- sample(1:nrow(serious_row), 81)
+slight_index <- sample(1:nrow(slight_row), 81)
+
+slight <- slight_row[slight_index,]
+serious <- serious_row[serious_index,]
+
+balanced_RTA <- rbind(slight, serious, fatal_row)
+balanced_RTA
+
+set.seed(1)
+train_id_2 <- sample(1:nrow(balanced_RTA), nrow(balanced_RTA)*4/5)
+balanced_RTA.train <- balanced_RTA[train_id_2,]
+balanced_RTA.test <- balanced_RTA[-train_id_2,]
+balanced_RTA.train
+```
+
+
+
+```{r}
+#random forest (factors)
+RTA_1.train
+
+accuracy_2 <- rep(0,5)
+
+for (i in 1:5) {
+  
+  forest_2 <- randomForest(Accident_severity~., 
+                         data = RTA_1.train,
+                         mtry = i,
+                         importance = TRUE)
+  
+  pred_forest_2 <- predict(forest_2, RTA_1.test)
+  accuracy_forest_2 <- mean(pred_forest_2 == RTA_1.test$Accident_severity)
+  accuracy_2[i] <- accuracy_forest_2
+  
+}
+plot(accuracy_2, type = "b")
+best_m <- which.max(accuracy_2)
+best_m
+
+
+forest <- randomForest(Accident_severity ~.,
+                    data = RTA_1.train,
+                    mtry = 1,
+                    importance = TRUE)
+
+pred_forest <- predict(forest, RTA_1.test)
+table(pred_forest, RTA_1.test$Accident_severity)
+heatmap(table(pred_forest, RTA_1.test$Accident_severity))
+forest$importance
+accuracy <- mean(pred_forest == RTA_1.test$Accident_severity)
+accuracy
+
+varImpPlot(forest)
+
+
+#random forest (factors) (balanced)
+accuracy_3 <- rep(0,5)
+
+for (i in 1:5) {
+  
+  forest_3 <- randomForest(Accident_severity~., 
+                         data = balanced_RTA.train,
+                         mtry = i,
+                         importance = TRUE)
+  
+  pred_forest_3 <- predict(forest_3, balanced_RTA.test)
+  accuracy_33 <- mean(pred_forest_3 == balanced_RTA.test$Accident_severity)
+  accuracy_3[i] <- accuracy_33
+  
+}
+plot(accuracy_3, type = "b")
+best_m <- which.max(accuracy_3)
+best_m
+
+
+forest_b <- randomForest(Accident_severity ~.,
+                    data = balanced_RTA.train,
+                    mtry = 2,
+                    importance = TRUE)
+
+pred_forest_b <- predict(forest_b, balanced_RTA.test)
+table(pred_forest_b, balanced_RTA.test$Accident_severity)*112
+nrow(balanced_RTA.test)
+heatmap(table(pred_forest_b, balanced_RTA.test$Accident_severity))
+forest$importance
+accuracy_b <- mean(pred_forest_b == balanced_RTA.test$Accident_severity)
+accuracy_b
+
+varImpPlot(forest_b)
+
+
+```
+
+```{r}
+# decision tree(factors)   
+set.seed(1)
+decision_tree <- rpart(Accident_severity ~.,
+                       RTA_1.train)
+plot(decision_tree)
+text(decision_tree, pretty=0)
+summary(decision_tree)
+pred_tree <- predict(decision_tree, RTA_1.test, type = "class")
+table(pred_tree, RTA_1.test$Accident_severity)
+test_error_3 <- mean(pred_tree == RTA_1.test$Accident_severity)
+test_error_3
+
+# undersampling
+tree <- tree(Accident_severity ~ ., 
+             balanced_RTA.train)
+
+plot(tree)
+text(tree, pretty=0)
+summary(tree)
+pred_tree2 <- predict(tree, balanced_RTA.test, type = "class")
+table(pred_tree2, balanced_RTA.test$Accident_severity)*112
+accuracy_before <- mean(pred_tree2 == balanced_RTA.test$Accident_severity)
+accuracy_before
+
+cv.RTA <- cv.tree(tree, FUN=prune.misclass)
+cv.RTA
+
+prune.RTA <- prune.misclass(tree, best=6)
+plot(prune.RTA)
+text(prune.RTA,pretty=0)
+tree.pred_prune <- predict(prune.RTA, balanced_RTA.test, type="class")
+table(tree.pred_prune, balanced_RTA.test$Accident_severity)*112
+accuracy_after <- mean(tree.pred_prune == balanced_RTA.test$Accident_severity)
+accuracy_after
+
+heatmap(a, margins = c(15, 15))
+
+balanced_RTA.test
+```
+
+```{r}
+# knn(factors)
+RTA_11 <- RTA_1
+RTA_11$Age_band_of_driver <- as.numeric(RTA_11$Age_band_of_driver)
+RTA_11$Sex_of_driver <- as.numeric(RTA_11$Sex_of_driver)
+RTA_11$Driving_experience <- as.numeric(RTA_11$Driving_experience)
+RTA_11$Type_of_vehicle <- as.numeric(RTA_11$Type_of_vehicle)
+RTA_11$Defect_of_vehicle <- as.numeric(RTA_11$Defect_of_vehicle)
+RTA_11$Accident_severity <- as.numeric(RTA_11$Accident_severity)
+
+RTA_11[RTA_11==6] <- 0
+RTA_11
+
+
+set.seed(1)
+train_id <- sample(1:nrow(RTA_11), nrow(RTA_11)*4/5)
+RTA_11.train <- RTA_11[train_id,]
+RTA_11.test<- RTA_11[-train_id,]
+
+
+pred_knn <- knn(RTA_11.train, RTA_11.test, RTA_11.train$Accident_severity, k=1) 
+table(pred_knn, RTA_11.test$Accident_severity)
+mean(pred_knn == RTA_11.test$Accident_severity)
+
+```
+
+
+```{r}
+# Data preprocessing (turn some factors into dummy)
+RTA_11
+sex_dummy <- dummy(RTA_11$Sex_of_driver)
+type_dummy <- dummy(RTA_11$Type_of_vehicle)
+defect_dummy <- dummy(RTA_11$Defect_of_vehicle)
+
+RTA_dummy <- RTA_11
+RTA_dummy <- RTA_dummy[,c(-2,-4,-5)]
+RTA_dummy <- cbind(RTA_dummy, sex_dummy) 
+RTA_dummy <- cbind(RTA_dummy, type_dummy) 
+RTA_dummy <- cbind(RTA_dummy, defect_dummy) 
+RTA_dummy <- as.tibble(RTA_dummy)
+RTA_dummy$Accident_severity <- as.factor(RTA_dummy$Accident_severity)
+
+```
+
+```{r}
+# model building (dummy)
+set.seed(1)
+train_id <- sample(1:nrow(RTA_dummy), nrow(RTA_dummy)*4/5)
+RTA_dummy.train <- RTA_dummy[train_id,]
+RTA_dummy.test<- RTA_dummy[-train_id,]
+
+
+
+```
+
+```{r}
+#random forest (dummy)
+
+forest_dummy <- randomForest(Accident_severity ~.,
+                    data = RTA_dummy.train,
+                    mtry = 10,
+                    importance = TRUE)
+
+pred_forest_dummy <- predict(forest_dummy, RTA_dummy.test)
+table(pred_forest_dummy, RTA_dummy.test$Accident_severity)
+heatmap(table(pred_forest_dummy, RTA_dummy.test$Accident_severity))
+forest$importance
+mean(pred_forest_dummy == RTA_dummy.test$Accident_severity)
+
+```
+
+```{r}
+# decision tree (dummy)
+set.seed(1)
+decision_tree_dummy <- rpart(Accident_severity ~.,
+                       RTA_dummy.train)
+plot(decision_tree_dummy)
+summary(decision_tree_dummy)
+pred_tree_dummy <- predict(decision_tree_dummy, RTA_dummy.test, type = "class")
+table(pred_tree_dummy, RTA_dummy.test$Accident_severity)
+
+
+tree_dummy <- tree(Accident_severity ~ ., 
+             RTA_dummy.train)
+plot(tree_dummy) 
+summary(tree_dummy)
+pred_tree2_dummy <- predict(tree_dummy, RTA_dummy.test, type = "class")
+table(pred_tree2_dummy, RTA_dummy.test$Accident_severity)
+```
+
+```{r}
+# knn (dummy)
+pred_knn_dummy <- knn(RTA_dummy.train, RTA_dummy.test, RTA_dummy.train$Accident_severity, k=1) 
+table(pred_knn_dummy, RTA_dummy.test$Accident_severity)
+mean(pred_knn_dummy == RTA_dummy.test$Accident_severity)
+```
+
+
+
+
+
+
+
+
+
+
+
